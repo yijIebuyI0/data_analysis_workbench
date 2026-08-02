@@ -1,0 +1,9 @@
+order_id,customer_segment,city,order_amount,discount_rate,order_date,status
+O-1001,新客, 上海市 ,268.0,0.05,2026-01-03,completed
+O-1001,新客,Shanghai,268.0,0.05,2026-01-03,completed
+O-1002,老客,北京,588.0,0.10,2026-01-05,completed
+O-1003,新客,广州市,128.0,,2026-01-06,completed
+O-1004,高价值客户,北京,1688.0,0.15,2026-01-08,completed
+O-1005,老客,Guangzhou,458.0,0.08,2026-01-10,refunded
+O-1006,高价值客户,上海,2188.0,0.20,2026-01-11,completed
+O-1007,新客,北京,,0.00,2026-01-12,pending
