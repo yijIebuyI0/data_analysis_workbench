@@ -6,7 +6,7 @@ from io import BytesIO
 
 import pandas as pd
 
-from src.data_io import DataLoadError, excel_sheet_names, load_uploaded_bytes
+from src.data_io import MAX_ROWS, DataLoadError, excel_sheet_names, load_uploaded_bytes
 
 
 class DataIoTests(unittest.TestCase):
@@ -25,6 +25,14 @@ class DataIoTests(unittest.TestCase):
         loaded_wrapped = load_uploaded_bytes(wrapped, "wrapped.json")
         self.assertEqual(loaded_wrapped.dataframe["id"].tolist(), [2, 3])
 
+    def test_loads_delimited_txt_and_preserves_metadata(self) -> None:
+        data = "id|city\n1|上海\n2|北京\n".encode("gb18030")
+        loaded = load_uploaded_bytes(data, "sample.txt")
+        self.assertEqual(loaded.dataframe.shape, (2, 2))
+        self.assertEqual(loaded.metadata["delimiter"], "|")
+        self.assertEqual(loaded.metadata["encoding"], "gb18030")
+        self.assertEqual(loaded.file_format, "txt")
+
     def test_excel_requires_explicit_sheet_for_multiple_sheets(self) -> None:
         buffer = BytesIO()
         with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
@@ -39,7 +47,15 @@ class DataIoTests(unittest.TestCase):
 
     def test_rejects_unsupported_extension(self) -> None:
         with self.assertRaisesRegex(DataLoadError, "仅支持"):
-            load_uploaded_bytes(b"hello", "notes.txt")
+            load_uploaded_bytes(b"hello", "notes.pdf")
+
+    def test_row_limit_is_500k(self) -> None:
+        self.assertEqual(MAX_ROWS, 500_000)
+        header = b"id\n"
+        accepted = load_uploaded_bytes(header + (b"1\n" * MAX_ROWS), "limit.csv")
+        self.assertEqual(len(accepted.dataframe), MAX_ROWS)
+        with self.assertRaisesRegex(DataLoadError, "500,000"):
+            load_uploaded_bytes(header + (b"1\n" * (MAX_ROWS + 1)), "too_many.csv")
 
 
 if __name__ == "__main__":

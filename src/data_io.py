@@ -11,8 +11,8 @@ from typing import Any
 import pandas as pd
 
 
-MAX_ROWS = 100_000
-SUPPORTED_SUFFIXES = {".csv": "csv", ".xlsx": "excel", ".json": "json"}
+MAX_ROWS = 500_000
+SUPPORTED_SUFFIXES = {".csv": "csv", ".txt": "txt", ".xlsx": "excel", ".json": "json"}
 
 
 class DataLoadError(ValueError):
@@ -40,7 +40,7 @@ def excel_sheet_names(data: bytes) -> list[str]:
         raise DataLoadError(f"无法读取 Excel 工作表：{exc}") from exc
 
 
-def _detect_csv(data: bytes) -> tuple[str, str]:
+def _detect_delimited_text(data: bytes) -> tuple[str, str]:
     sample = data[:65_536]
     encoding = None
     for candidate in ("utf-8-sig", "utf-8", "gb18030"):
@@ -51,7 +51,7 @@ def _detect_csv(data: bytes) -> tuple[str, str]:
         except UnicodeDecodeError:
             continue
     if encoding is None:
-        raise DataLoadError("无法识别 CSV 编码，请转换为 UTF-8 或 GB18030 后重试。")
+        raise DataLoadError("无法识别文本编码，请转换为 UTF-8 或 GB18030 后重试。")
     text = sample.decode(encoding)
     try:
         delimiter = csv.Sniffer().sniff(text, delimiters=",\t;|").delimiter
@@ -106,11 +106,11 @@ def load_uploaded_bytes(data: bytes, file_name: str, sheet_name: str | None = No
     suffix = Path(file_name).suffix.lower()
     file_format = SUPPORTED_SUFFIXES.get(suffix)
     if file_format is None:
-        raise DataLoadError("仅支持 CSV、XLSX 和 JSON 文件。")
+        raise DataLoadError("仅支持 CSV、TXT、XLSX 和 JSON 文件。")
     metadata: dict[str, Any] = {}
     try:
-        if file_format == "csv":
-            encoding, delimiter = _detect_csv(data)
+        if file_format in {"csv", "txt"}:
+            encoding, delimiter = _detect_delimited_text(data)
             frame = pd.read_csv(BytesIO(data), encoding=encoding, sep=delimiter)
             metadata.update(encoding=encoding, delimiter=delimiter)
         elif file_format == "excel":

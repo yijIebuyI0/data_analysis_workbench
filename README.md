@@ -1,7 +1,8 @@
 # DataLab：AI 数据分析工作台
 
-一个面向数据分析初学者和业务同学的 Streamlit MVP：上传 CSV、Excel 或 JSON，先评估并逐步确认清洗动作，再完成描述性统计与自定义聚合，最后让大模型基于结构化分析结果输出业务策略。
+一个面向数据分析初学者和业务同学的 Streamlit MVP：上传 CSV、TXT、Excel 或 JSON，先评估并逐步确认清洗动作，再完成描述性统计与自定义聚合，最后让大模型基于结构化分析结果输出业务策略。
 
+这个项目刻意控制在“实习候选人可以独立完成并讲清楚”的范围内：单机运行、内存处理、不做账号系统和数据库，不把普通数据处理包装成复杂的多智能体平台。
 
 ## 为什么做
 
@@ -15,7 +16,7 @@
 
 ```mermaid
 flowchart LR
-    A["上传 CSV / XLSX / JSON"] --> B["自动数据评估"]
+    A["上传 CSV / TXT / XLSX / JSON"] --> B["自动数据评估"]
     B --> C["配置一个清洗步骤"]
     C --> D["预览命中数与前后样例"]
     D -->|"确认"| E["更新工作副本"]
@@ -44,7 +45,7 @@ flowchart LR
 ### 3. AI 业务策略
 
 - 系统提示词把模型限定为严谨的数据分析和业务策略顾问，要求区分数据事实、推断与待验证假设。
-- 使用 OpenAI Responses API 的函数调用流程：模型先请求 `get_analysis_summary`，应用再用 `function_call_output` 返回第二阶段的结构化结果。
+- 使用 DeepSeek Chat Completions 工具调用：模型先请求 `get_analysis_summary`，应用再用 `tool` 消息返回第二阶段的结构化结果。
 - 完整原始明细不会进入模型上下文；默认只传汇总统计、最多 50 行聚合结果和清洗记录。
 - 用户可以输入自己的业务问题，策略输出包含核心发现、业务解释、行动建议、验证指标和局限性。
 
@@ -53,11 +54,11 @@ flowchart LR
 建议使用 Python 3.11 或 3.12。
 
 ```powershell
-cd "C:\Users\Le Ming\Documents\Codex\2026-07-30\new-chat\outputs\ai-data-analysis-workbench"
+cd "E:\python\data_analysis_workbench"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m streamlit run app.py
+python -m streamlit run datalab.py
 ```
 
 打开页面后，可以先上传 `sample_data/customer_orders.csv` 体验完整流程。前两个板块不需要 API Key。
@@ -65,9 +66,9 @@ python -m streamlit run app.py
 若要使用 AI 策略，可任选一种配置方式：
 
 ```powershell
-$env:OPENAI_API_KEY="your-key"
-$env:OPENAI_MODEL="gpt-5.6-terra"
-python -m streamlit run app.py
+$env:DEEPSEEK_API_KEY="your-key"
+$env:DEEPSEEK_MODEL="deepseek-v4-flash"
+python -m streamlit run datalab.py
 ```
 
 也可以把 `.streamlit/secrets.toml.example` 复制为 `.streamlit/secrets.toml` 后填写 Key，或只在页面密码框中临时输入。Key 不会写入清洗日志或下载文件。
@@ -78,19 +79,19 @@ python -m streamlit run app.py
 python -m unittest discover -s tests -v
 ```
 
-当前自动化测试覆盖：CSV/Excel/JSON 读取、空值/去重/类型/口径清洗、源数据不变、聚合计算、另存文件名、AI 工具消息传递，以及 Streamlit 首屏启动。
+当前自动化测试覆盖：CSV/TXT/Excel/JSON 读取、空值/去重/类型/口径清洗、源数据不变、聚合计算、另存文件名、AI 工具消息传递，以及 Streamlit 首屏启动。
 
 ## 项目结构
 
 ```text
 ai-data-analysis-workbench/
-├── app.py                  # Streamlit 页面与步骤状态控制
+├── datalab.py              # Streamlit 页面与步骤状态控制
 ├── src/
 │   ├── data_io.py          # 三种文件读取、编码/工作表处理与校验
 │   ├── profiling.py        # 数据质量画像
 │   ├── cleaning.py         # 清洗规则、执行和前后预览
 │   ├── analytics.py        # 描述统计、自由聚合和 AI 上下文
-│   ├── llm.py              # 系统提示词与 Responses API 工具调用
+│   ├── llm.py              # 系统提示词与 DeepSeek 工具调用
 │   └── exporting.py        # 新文件与审计记录导出
 ├── tests/                  # 单元测试与 Streamlit 冒烟测试
 ├── sample_data/            # 可演示样例
@@ -99,8 +100,9 @@ ai-data-analysis-workbench/
 
 ## 产品边界
 
-- 单次最多 100,000 行，所有数据在当前 Python 进程内存中处理。
+- 单次最多 500,000 行，所有数据在当前 Python 进程内存中处理。
 - Excel 一次分析一个工作表；支持 `.xlsx`，暂不支持旧版 `.xls`。
+- TXT 按分隔符表格读取，自动识别逗号、制表符、分号或竖线及 UTF-8/GB18030 编码。
 - JSON 支持对象数组、JSON Lines，以及包含 `data` 数组的对象；复杂嵌套结构会被扁平化。
 - 暂不包含登录、权限、云存储、协作编辑、定时任务、数据库连接或模型成本管理。
 - 当前清洗规则只在本次会话中生效；生产化时再加入可复用规则模板和持久化。
@@ -111,6 +113,6 @@ ai-data-analysis-workbench/
 
 - [Streamlit Session State](https://docs.streamlit.io/develop/api-reference/caching-and-state/st.session_state)
 - [Streamlit file uploader](https://docs.streamlit.io/develop/api-reference/widgets/st.file_uploader)
-- [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
-- [OpenAI Responses API text generation](https://developers.openai.com/api/docs/guides/text)
-
+- [DeepSeek Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)
+- [DeepSeek Tool Calls](https://api-docs.deepseek.com/guides/tool_calls)
+- [DeepSeek Models & Pricing](https://api-docs.deepseek.com/quick_start/pricing)

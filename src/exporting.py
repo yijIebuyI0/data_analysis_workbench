@@ -20,6 +20,7 @@ def dataframe_download(
     original_name: str,
     original_format: str,
     timestamp: datetime | None = None,
+    source_metadata: dict[str, Any] | None = None,
 ) -> tuple[bytes, str, str]:
     if original_format == "excel":
         buffer = BytesIO()
@@ -33,7 +34,11 @@ def dataframe_download(
     if original_format == "json":
         data = frame.to_json(orient="records", force_ascii=False, indent=2, date_format="iso").encode("utf-8")
         return data, cleaned_file_name(original_name, "json", timestamp), "application/json"
-    data = frame.to_csv(index=False).encode("utf-8-sig")
+    metadata = source_metadata or {}
+    delimiter = metadata.get("delimiter", "," if original_format == "csv" else "\t")
+    data = frame.to_csv(index=False, sep=delimiter).encode("utf-8-sig")
+    if original_format == "txt":
+        return data, cleaned_file_name(original_name, "txt", timestamp), "text/plain"
     return data, cleaned_file_name(original_name, "csv", timestamp), "text/csv"
 
 

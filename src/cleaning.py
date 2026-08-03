@@ -98,6 +98,33 @@ def _changed_indices(before: pd.DataFrame, after: pd.DataFrame) -> list[int]:
     return [index for index in before.index if index in changed]
 
 
+def _duplicate_samples(frame: pd.DataFrame, spec: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    key_columns = spec.get("columns", []) or list(frame.columns)
+    keep = spec.get("keep", "first")
+    duplicate_mask = frame.duplicated(subset=key_columns, keep=False)
+    candidates = frame.loc[duplicate_mask].copy()
+    if candidates.empty:
+        empty = frame.head(0).reset_index(names="原行索引")
+        return empty, empty.copy()
+
+    group_numbers = candidates.groupby(key_columns, dropna=False, sort=False).ngroup() + 1
+    removed_mask = frame.duplicated(subset=key_columns, keep=keep).loc[candidates.index]
+    candidates.insert(0, "重复组", group_numbers.astype(int))
+    candidates.insert(1, "处理结果", removed_mask.map({True: "将删除", False: "保留"}))
+
+    selected_groups = candidates["重复组"].drop_duplicates().head(3)
+    before_view = candidates[candidates["重复组"].isin(selected_groups)].head(12).copy()
+    after_view = before_view[before_view["处理结果"] == "保留"].copy()
+    after_view["处理结果"] = "已保留"
+
+    remaining_columns = [column for column in frame.columns if column not in key_columns]
+    display_columns = ["重复组", "处理结果", *key_columns, *remaining_columns]
+    return (
+        before_view[display_columns].reset_index(names="原行索引"),
+        after_view[display_columns].reset_index(names="原行索引"),
+    )
+
+
 def _apply_missing(frame: pd.DataFrame, spec: dict[str, Any]) -> pd.DataFrame:
     columns = spec.get("columns", [])
     _ensure_columns(frame, columns)
@@ -208,11 +235,24 @@ def prepare_cleaning_preview(frame: pd.DataFrame, spec: dict[str, Any], base_rev
         raise CleaningError("不支持的清洗动作。")
 
     changed = _changed_indices(before, after)
-    before_view = before.loc[changed[:10]].copy() if changed else before.head(0).copy()
-    after_indices = [index for index in changed[:10] if index in after.index]
-    after_view = after.loc[after_indices].copy() if after_indices else after.head(0).copy()
+    if action == "duplicates":
+        before_sample, after_sample = _duplicate_samples(before, spec)
+    else:
+        before_view = before.loc[changed[:10]].copy() if changed else before.head(0).copy()
+        after_indices = [index for index in changed[:10] if index in after.index]
+        after_view = after.loc[after_indices].copy() if after_indices else after.head(0).copy()
+        before_sample = before_view.reset_index(names="原行索引")
+        after_sample = after_view.reset_index(names="原行索引")
     before_overview = _overview(before)
     after_overview = _overview(after)
+    if action == "duplicates":
+        duplicate_columns = spec.get("columns", []) or None
+        keep = spec.get("keep", "first")
+        duplicates_before = int(before.duplicated(subset=duplicate_columns, keep=keep).sum())
+        duplicates_after = int(after.duplicated(subset=duplicate_columns, keep=keep).sum())
+    else:
+        duplicates_before = before_overview["duplicate_rows"]
+        duplicates_after = after_overview["duplicate_rows"]
     summary = {
         "action": action,
         "label": ACTION_LABELS[action],
@@ -221,14 +261,14 @@ def prepare_cleaning_preview(frame: pd.DataFrame, spec: dict[str, Any], base_rev
         "rows_after": after_overview["rows"],
         "missing_before": before_overview["missing_cells"],
         "missing_after": after_overview["missing_cells"],
-        "duplicates_before": before_overview["duplicate_rows"],
-        "duplicates_after": after_overview["duplicate_rows"],
+        "duplicates_before": duplicates_before,
+        "duplicates_after": duplicates_after,
     }
     return CleaningPreview(
         result=after.reset_index(drop=True),
         summary=summary,
-        before_sample=before_view.reset_index(names="原行索引"),
-        after_sample=after_view.reset_index(names="原行索引"),
+        before_sample=before_sample,
+        after_sample=after_sample,
         spec=spec,
         base_revision=base_revision,
     )

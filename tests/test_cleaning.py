@@ -58,6 +58,21 @@ class CleaningTests(unittest.TestCase):
         ).result
         self.assertEqual(normalized["city"].tolist()[:2], ["上海", "上海"])
 
+    def test_duplicate_preview_groups_rows_by_selected_key(self) -> None:
+        preview = prepare_cleaning_preview(
+            self.frame,
+            {"action": "duplicates", "columns": ["id"], "keep": "last"},
+            0,
+        )
+        self.assertEqual(preview.summary["affected_rows"], 1)
+        self.assertEqual(preview.summary["duplicates_before"], 1)
+        self.assertEqual(preview.summary["duplicates_after"], 0)
+        self.assertEqual(preview.before_sample["id"].tolist(), [1, 1])
+        self.assertEqual(preview.before_sample["重复组"].nunique(), 1)
+        self.assertEqual(preview.before_sample["处理结果"].tolist(), ["将删除", "保留"])
+        self.assertEqual(preview.after_sample["原行索引"].tolist(), [1])
+        self.assertEqual(preview.after_sample["处理结果"].tolist(), ["已保留"])
+
     def test_constant_fill_keeps_numeric_columns_numeric(self) -> None:
         preview = prepare_cleaning_preview(
             self.frame,

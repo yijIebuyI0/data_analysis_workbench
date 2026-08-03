@@ -160,9 +160,9 @@ def render_stage_rail(active: str) -> None:
 def load_uploader() -> None:
     st.sidebar.markdown("### 数据入口")
     uploaded = st.sidebar.file_uploader(
-        "上传 CSV、Excel 或 JSON",
-        type=["csv", "xlsx", "json"],
-        help="单文件不超过 200MB；当前版本最多处理 10 万行。",
+        "上传 CSV、TXT、Excel 或 JSON",
+        type=["csv", "txt", "xlsx", "json"],
+        help="单文件不超过 200MB；当前版本最多处理 50 万行。",
     )
     if uploaded is None:
         return
@@ -187,7 +187,7 @@ def load_uploader() -> None:
 
 
 def show_empty_state() -> None:
-    st.info("从左侧上传一个 CSV、XLSX 或 JSON 文件开始。")
+    st.info("从左侧上传一个 CSV、TXT、XLSX 或 JSON 文件开始。")
     columns = st.columns(3)
     copy = [
         ("01", "先看数据质量", "自动识别空值、重复行、字段类型和疑似口径问题。"),
@@ -290,16 +290,19 @@ def render_pending_preview(preview: CleaningPreview) -> None:
     columns[0].metric("影响行数", summary["affected_rows"])
     columns[1].metric("结果行数", summary["rows_after"], summary["rows_after"] - summary["rows_before"])
     columns[2].metric("结果空值", summary["missing_after"], summary["missing_after"] - summary["missing_before"])
-    columns[3].metric("结果重复行", summary["duplicates_after"], summary["duplicates_after"] - summary["duplicates_before"])
+    duplicate_label = "结果键重复行" if summary["action"] == "duplicates" else "结果重复行"
+    columns[3].metric(duplicate_label, summary["duplicates_after"], summary["duplicates_after"] - summary["duplicates_before"])
     if summary["affected_rows"] == 0:
         st.warning("该步骤不会改变当前数据，请检查字段和参数。")
     elif not preview.before_sample.empty:
+        if summary["action"] == "duplicates":
+            st.info("同一“重复组”内，所选去重键的值完全一致；预览同时展示将保留和将删除的记录。")
         left, right = st.columns(2)
         with left:
-            st.caption("执行前样例")
+            st.caption("去重前：重复组明细" if summary["action"] == "duplicates" else "执行前样例")
             st.dataframe(preview.before_sample, hide_index=True, width="stretch")
         with right:
-            st.caption("执行后样例")
+            st.caption("去重后：每组保留记录" if summary["action"] == "duplicates" else "执行后样例")
             st.dataframe(preview.after_sample, hide_index=True, width="stretch")
     confirm_col, cancel_col = st.columns([1, 1])
     if confirm_col.button("确认并执行该步骤", type="primary", width="stretch"):
@@ -447,23 +450,23 @@ def render_strategy_stage(frame: pd.DataFrame, loaded: LoadedData) -> None:
         height=120,
     )
     key_input = st.text_input(
-        "OpenAI API Key",
+        "DeepSeek API Key",
         type="password",
         help="优先读取当前会话输入，其次读取 Streamlit secrets 或环境变量；不会写入导出文件。",
     )
     try:
-        secret_key = str(st.secrets.get("OPENAI_API_KEY", ""))
+        secret_key = str(st.secrets.get("DEEPSEEK_API_KEY", ""))
     except (FileNotFoundError, StreamlitSecretNotFoundError):
         secret_key = ""
-    available_models = ["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol"]
-    configured_model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+    available_models = ["deepseek-v4-flash", "deepseek-v4-pro"]
+    configured_model = os.getenv("DEEPSEEK_MODEL", DEFAULT_MODEL)
     if configured_model not in available_models:
         available_models.insert(0, configured_model)
     model = st.selectbox("模型", available_models, index=available_models.index(configured_model))
     if st.button("生成业务策略", type="primary", width="stretch"):
         api_key = resolve_api_key(key_input or secret_key)
         if not api_key:
-            st.error("请配置 OPENAI_API_KEY，或在当前会话中输入 API Key。")
+            st.error("请配置 DEEPSEEK_API_KEY，或在当前会话中输入 API Key。")
         else:
             with st.spinner("正在读取分析工具结果并生成策略…"):
                 try:
@@ -476,7 +479,12 @@ def render_strategy_stage(frame: pd.DataFrame, loaded: LoadedData) -> None:
 
     st.markdown('<div class="lab-rule"></div>', unsafe_allow_html=True)
     st.markdown("### 另存结果")
-    data_bytes, file_name, mime = dataframe_download(frame, loaded.file_name, loaded.file_format)
+    data_bytes, file_name, mime = dataframe_download(
+        frame,
+        loaded.file_name,
+        loaded.file_format,
+        source_metadata=loaded.metadata,
+    )
     source_info = {
         "file_name": loaded.file_name,
         "file_format": loaded.file_format,

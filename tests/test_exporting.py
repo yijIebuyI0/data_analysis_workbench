@@ -20,6 +20,17 @@ class ExportingTests(unittest.TestCase):
         excel_bytes, excel_name, _ = dataframe_download(frame, "source.xlsx", "excel", fixed)
         self.assertEqual(excel_name, "source_cleaned_20260802_093000.xlsx")
         self.assertTrue(excel_bytes.startswith(b"PK"))
+        txt_frame = pd.DataFrame({"id": [1, 2], "city": ["上海", "北京"]})
+        txt_bytes, txt_name, txt_mime = dataframe_download(
+            txt_frame,
+            "source.txt",
+            "txt",
+            fixed,
+            {"delimiter": "|"},
+        )
+        self.assertEqual(txt_name, "source_cleaned_20260802_093000.txt")
+        self.assertEqual(txt_mime, "text/plain")
+        self.assertIn(b"id|", txt_bytes)
 
     def test_audit_log_is_json(self) -> None:
         payload = audit_download({"file_name": "x.csv"}, [{"step": 1}], {"rows": 2})

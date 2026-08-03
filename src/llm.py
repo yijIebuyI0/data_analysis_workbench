@@ -5,7 +5,8 @@ import os
 from typing import Any
 
 
-DEFAULT_MODEL = "gpt-5.6-terra"
+DEFAULT_MODEL = "deepseek-v4-flash"
+DEFAULT_BASE_URL = "https://api.deepseek.com"
 SYSTEM_PROMPT = """你是一名严谨的数据分析专家和业务策略顾问。
 
 工作规则：
@@ -19,10 +20,11 @@ SYSTEM_PROMPT = """你是一名严谨的数据分析专家和业务策略顾问�
 
 ANALYSIS_TOOL = {
     "type": "function",
-    "name": "get_analysis_summary",
-    "description": "读取已清洗数据的描述性统计、清洗记录和用户选择的聚合分析结果。",
-    "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
-    "strict": True,
+    "function": {
+        "name": "get_analysis_summary",
+        "description": "读取已清洗数据的描述性统计、清洗记录和用户选择的聚合分析结果。",
+        "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+    },
 }
 
 
@@ -31,7 +33,7 @@ class StrategyGenerationError(RuntimeError):
 
 
 def resolve_api_key(user_key: str | None = None) -> str | None:
-    return (user_key or "").strip() or os.getenv("OPENAI_API_KEY")
+    return (user_key or "").strip() or os.getenv("DEEPSEEK_API_KEY")
 
 
 def generate_strategy(
@@ -39,58 +41,69 @@ def generate_strategy(
     analysis_context: dict[str, Any],
     api_key: str,
     model: str = DEFAULT_MODEL,
+    base_url: str = DEFAULT_BASE_URL,
     client: Any | None = None,
 ) -> str:
     if not user_prompt.strip():
         raise StrategyGenerationError("请先填写业务问题。")
     if not api_key:
-        raise StrategyGenerationError("未配置 OpenAI API Key。")
+        raise StrategyGenerationError("未配置 DeepSeek API Key。")
     if client is None:
         try:
             from openai import OpenAI
         except ImportError as exc:
             raise StrategyGenerationError("缺少 openai 依赖，请先安装 requirements.txt。") from exc
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, base_url=base_url)
 
-    input_items: list[Any] = [{"role": "user", "content": user_prompt.strip()}]
+    messages: list[Any] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt.strip()},
+    ]
     try:
-        first_response = client.responses.create(
+        first_response = client.chat.completions.create(
             model=model,
-            reasoning={"effort": "low"},
-            instructions=SYSTEM_PROMPT,
-            input=input_items,
+            messages=messages,
             tools=[ANALYSIS_TOOL],
-            tool_choice={"type": "function", "name": "get_analysis_summary"},
+            tool_choice={"type": "function", "function": {"name": "get_analysis_summary"}},
+            extra_body={"thinking": {"type": "disabled"}},
         )
-        input_items.extend(first_response.output)
-        tool_calls = [item for item in first_response.output if getattr(item, "type", None) == "function_call"]
+        assistant_message = first_response.choices[0].message
+        tool_calls = getattr(assistant_message, "tool_calls", None) or []
         if not tool_calls:
             raise StrategyGenerationError("模型没有请求分析工具，请稍后重试。")
+        messages.append(assistant_message)
         context_json = json.dumps(analysis_context, ensure_ascii=False, default=str)
         for call in tool_calls:
-            if getattr(call, "name", None) != "get_analysis_summary":
-                raise StrategyGenerationError(f"模型请求了未授权工具：{getattr(call, 'name', '')}")
-            input_items.append(
+            function = getattr(call, "function", None)
+            function_name = getattr(function, "name", "")
+            if function_name != "get_analysis_summary":
+                raise StrategyGenerationError(f"模型请求了未授权工具：{function_name}")
+            try:
+                arguments = json.loads(getattr(function, "arguments", "{}") or "{}")
+            except json.JSONDecodeError as exc:
+                raise StrategyGenerationError("模型返回了无法解析的工具参数。") from exc
+            if arguments:
+                raise StrategyGenerationError("分析摘要工具不接受参数，已拒绝本次调用。")
+            messages.append(
                 {
-                    "type": "function_call_output",
-                    "call_id": call.call_id,
-                    "output": context_json,
+                    "role": "tool",
+                    "tool_call_id": call.id,
+                    "content": context_json,
                 }
             )
-        final_response = client.responses.create(
+        final_response = client.chat.completions.create(
             model=model,
-            reasoning={"effort": "low"},
-            instructions=SYSTEM_PROMPT,
-            input=input_items,
+            messages=messages,
             tools=[ANALYSIS_TOOL],
             tool_choice="none",
+            extra_body={"thinking": {"type": "disabled"}},
         )
     except StrategyGenerationError:
         raise
     except Exception as exc:
-        raise StrategyGenerationError(f"调用模型失败：{exc}") from exc
+        raise StrategyGenerationError(f"调用 DeepSeek 失败：{exc}") from exc
 
-    output = getattr(final_response, "output_text", "").strip()
+    output = (final_response.choices[0].message.content or "").strip()
     if not output:
         raise StrategyGenerationError("模型未返回可展示的策略内容。")
     return output
