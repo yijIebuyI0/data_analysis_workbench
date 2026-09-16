@@ -49,14 +49,21 @@ flowchart LR
 
 ## 快速开始
 
-建议使用 Python 3.11 或 3.12。
+建议使用 Python 3.11 或 3.12。在项目根目录（即本 `README.md` 所在目录）执行：
 
 ```powershell
-cd "E:\python\data_analysis_workbench"
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m streamlit run datalab.py
+```
+
+如果本机没有 Python，也可以直接用 [uv](https://docs.astral.sh/uv/) 一步完成：
+
+```powershell
+uv venv --python 3.12
+uv pip install -r requirements.txt
+uv run streamlit run datalab.py
 ```
 
 打开页面后，可以先上传 `sample_data/customer_orders.csv` 体验完整流程。前两个板块不需要 API Key。
@@ -82,7 +89,7 @@ python -m unittest discover -s tests -v
 ## 项目结构
 
 ```text
-ai-data-analysis-workbench/
+data_analysis_workbench/
 ├── datalab.py              # Streamlit 页面与步骤状态控制
 ├── src/
 │   ├── data_io.py          # 三种文件读取、编码/工作表处理与校验
